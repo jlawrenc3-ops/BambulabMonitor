@@ -1,9 +1,21 @@
 [
   {
-    "id": "example-id",
+    "id": "example-bambu",
     "name": "X1C - Garage",
+    "type": "bambu",
     "ip": "192.168.1.50",
     "accessCode": "12345678",
     "serial": "01S00A000000000"
+  },
+  {
+    "id": "example-generic",
+    "name": "Sensor Hub",
+    "type": "generic-mqtt",
+    "host": "192.168.1.80",
+    "port": "1883",
+    "topic": "sensors/status",
+    "username": "",
+    "password": "",
+    "tls": ""
   }
 ]

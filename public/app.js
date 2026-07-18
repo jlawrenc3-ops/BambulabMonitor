@@ -5,35 +5,19 @@ const formTitleEl = document.getElementById('form-title');
 const submitBtnEl = document.getElementById('submit-btn');
 const cancelEditBtnEl = document.getElementById('cancel-edit-btn');
 const formErrorEl = document.getElementById('form-error');
+const typeSelectEl = document.getElementById('type-select');
+const dynamicFieldsEl = document.getElementById('dynamic-fields');
 const idFieldEl = formEl.elements.id;
 
 let lastPrinters = [];
-
-const STATE_LABELS = {
-  RUNNING: 'Printing',
-  PAUSE: 'Paused',
-  FINISH: 'Finished',
-  FAILED: 'Failed',
-  IDLE: 'Idle',
-};
-
-function stateLabel(state) {
-  if (!state) return 'Unknown';
-  return STATE_LABELS[state] || state;
-}
+let deviceTypes = [];
+let editingId = null;
 
 function formatMinutes(min) {
   if (min === null || min === undefined) return '--';
   const h = Math.floor(min / 60);
   const m = min % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-function formatTemp(actual, target) {
-  if (actual === null || actual === undefined) return '--';
-  const a = Math.round(actual);
-  if (target === null || target === undefined) return `${a}°C`;
-  return `${a}°C / ${Math.round(target)}°C`;
 }
 
 function escapeHtml(str) {
@@ -43,24 +27,67 @@ function escapeHtml(str) {
   }[c]));
 }
 
+function currentDeviceType() {
+  return deviceTypes.find((t) => t.id === typeSelectEl.value);
+}
+
+function renderDynamicFields(prefill) {
+  const deviceType = currentDeviceType();
+  if (!deviceType) {
+    dynamicFieldsEl.innerHTML = '';
+    return;
+  }
+
+  dynamicFieldsEl.innerHTML = deviceType.fields.map((f) => {
+    const inputType = f.inputType || 'text';
+    const value = prefill && prefill[f.name] !== undefined ? prefill[f.name] : '';
+    const placeholder = f.secret && editingId ? 'Leave blank to keep current value' : (f.placeholder || '');
+    const required = f.required && !(f.secret && editingId);
+
+    if (inputType === 'checkbox') {
+      return `
+        <label class="checkbox-label">
+          <input type="checkbox" name="${f.name}" ${value ? 'checked' : ''} />
+          ${escapeHtml(f.label)}
+        </label>
+      `;
+    }
+
+    return `
+      <label>
+        ${escapeHtml(f.label)}
+        <input type="${inputType}" name="${f.name}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''} />
+      </label>
+    `;
+  }).join('');
+}
+
+async function loadDeviceTypes() {
+  const res = await fetch('/api/device-types');
+  deviceTypes = await res.json();
+  typeSelectEl.innerHTML = deviceTypes.map((t) => `<option value="${t.id}">${escapeHtml(t.label)}</option>`).join('');
+  renderDynamicFields();
+}
+
+typeSelectEl.addEventListener('change', () => renderDynamicFields());
+
 function renderPrinters(printers) {
   emptyStateEl.hidden = printers.length > 0;
 
   tbodyEl.innerHTML = printers.map((p) => {
     const s = p.status;
-    const percent = s.percent ?? 0;
+    const percent = s.percent ?? null;
+    const metrics = (s.metrics || []).map((m) => `${escapeHtml(m.label)}: ${escapeHtml(m.value)}`).join(', ');
     return `
       <tr data-id="${p.id}">
         <td><span class="status-dot ${s.connected ? 'online' : ''}"></span>${escapeHtml(p.name)}</td>
-        <td>${stateLabel(s.gcodeState)}</td>
-        <td>${escapeHtml(s.subtaskName) || '--'}</td>
+        <td>${escapeHtml(s.state) || 'Unknown'}</td>
+        <td>${escapeHtml(s.detail) || '--'}</td>
         <td>
-          <span class="progress-track"><span class="progress-fill" style="width: ${percent}%"></span></span>${s.percent ?? '--'}%
+          ${percent === null ? '--' : `<span class="progress-track"><span class="progress-fill" style="width: ${percent}%"></span></span>${percent}%`}
         </td>
         <td>${formatMinutes(s.remainingMinutes)}</td>
-        <td>${s.layerNum ?? '--'}/${s.totalLayerNum ?? '--'}</td>
-        <td>${formatTemp(s.nozzleTemp, s.nozzleTarget)}</td>
-        <td>${formatTemp(s.bedTemp, s.bedTarget)}</td>
+        <td>${metrics || '--'}</td>
         <td>
           <button class="row-btn edit-btn" data-id="${p.id}">Edit</button>
           <button class="row-btn remove-btn" data-id="${p.id}">Remove</button>
@@ -84,26 +111,26 @@ async function refresh() {
 }
 
 function enterEditMode(printer) {
+  editingId = printer.id;
   idFieldEl.value = printer.id;
   formEl.elements.name.value = printer.name;
-  formEl.elements.ip.value = printer.ip;
-  formEl.elements.accessCode.value = '';
-  formEl.elements.accessCode.placeholder = 'Leave blank to keep current access code';
-  formEl.elements.accessCode.required = false;
-  formEl.elements.serial.value = printer.serial;
-  formTitleEl.textContent = `Edit Printer: ${printer.name}`;
+  typeSelectEl.value = printer.type;
+  typeSelectEl.disabled = true;
+  renderDynamicFields(printer.config);
+  formTitleEl.textContent = `Edit Device: ${printer.name}`;
   submitBtnEl.textContent = 'Save Changes';
   cancelEditBtnEl.hidden = false;
   formEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function exitEditMode() {
+  editingId = null;
   formEl.reset();
   idFieldEl.value = '';
-  formEl.elements.accessCode.placeholder = 'LAN access code (printer settings)';
-  formEl.elements.accessCode.required = true;
-  formTitleEl.textContent = 'Add Printer';
-  submitBtnEl.textContent = 'Add Printer';
+  typeSelectEl.disabled = false;
+  renderDynamicFields();
+  formTitleEl.textContent = 'Add Device';
+  submitBtnEl.textContent = 'Add Device';
   cancelEditBtnEl.hidden = true;
   formErrorEl.textContent = '';
 }
@@ -127,16 +154,15 @@ formEl.addEventListener('submit', async (e) => {
   e.preventDefault();
   formErrorEl.textContent = '';
 
-  const id = idFieldEl.value;
-  const data = Object.fromEntries(new FormData(formEl).entries());
-  delete data.id;
-
-  let url = '/api/printers';
-  let method = 'POST';
-  if (id) {
-    url = `/api/printers/${id}`;
-    method = 'PUT';
+  const deviceType = currentDeviceType();
+  const formData = new FormData(formEl);
+  const data = { name: formData.get('name'), type: typeSelectEl.value };
+  for (const f of deviceType.fields) {
+    data[f.name] = f.inputType === 'checkbox' ? formEl.elements[f.name].checked : formData.get(f.name);
   }
+
+  const url = editingId ? `/api/printers/${editingId}` : '/api/printers';
+  const method = editingId ? 'PUT' : 'POST';
 
   const res = await fetch(url, {
     method,
@@ -146,7 +172,7 @@ formEl.addEventListener('submit', async (e) => {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    formErrorEl.textContent = body.error || 'Failed to save printer';
+    formErrorEl.textContent = body.error || 'Failed to save device';
     return;
   }
 
@@ -154,5 +180,8 @@ formEl.addEventListener('submit', async (e) => {
   refresh();
 });
 
-refresh();
-setInterval(refresh, 3000);
+(async function init() {
+  await loadDeviceTypes();
+  await refresh();
+  setInterval(refresh, 3000);
+})();

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
-const mqtt = require('mqtt');
+const deviceTypes = require('./deviceTypes');
 
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'printers.json');
@@ -11,10 +11,10 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-/** @type {Map<string, {config: object, client: import('mqtt').MqttClient|null, status: object}>} */
-const printers = new Map();
+/** @type {Map<string, {config: object, client: object|null, status: object}>} */
+const devices = new Map();
 
-function loadPrinters() {
+function loadDevices() {
   if (!fs.existsSync(DATA_FILE)) return [];
   try {
     return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -24,8 +24,8 @@ function loadPrinters() {
   }
 }
 
-function savePrinters() {
-  const configs = Array.from(printers.values()).map((p) => p.config);
+function saveDevices() {
+  const configs = Array.from(devices.values()).map((d) => d.config);
   fs.writeFileSync(DATA_FILE, JSON.stringify(configs, null, 2));
 }
 
@@ -34,141 +34,141 @@ function defaultStatus() {
     connected: false,
     lastUpdate: null,
     lastError: null,
-    gcodeState: null,
+    state: null,
+    detail: null,
     percent: null,
     remainingMinutes: null,
-    bedTemp: null,
-    bedTarget: null,
-    nozzleTemp: null,
-    nozzleTarget: null,
-    subtaskName: null,
-    layerNum: null,
-    totalLayerNum: null,
+    metrics: [],
   };
 }
 
-function connectPrinter(entry) {
-  const { config } = entry;
+class ValidationError extends Error {}
+
+function buildConfig(deviceType, body, existingConfig) {
+  if (!body || !body.name) throw new ValidationError('name is required');
+
+  const config = { name: body.name, type: deviceType.id };
+  for (const field of deviceType.fields) {
+    let value = body[field.name];
+    if ((value === undefined || value === '') && field.secret && existingConfig) {
+      value = existingConfig[field.name];
+    }
+    if (field.required && !value) {
+      throw new ValidationError(`${field.label} is required`);
+    }
+    config[field.name] = value === undefined ? '' : value;
+  }
+  return config;
+}
+
+function connectDevice(entry) {
+  const deviceType = deviceTypes[entry.config.type];
+  if (!deviceType) {
+    entry.status.lastError = `Unknown device type: ${entry.config.type}`;
+    return;
+  }
 
   if (entry.client) {
     entry.client.end(true);
   }
 
-  const client = mqtt.connect(`mqtts://${config.ip}:8883`, {
-    username: 'bblp',
-    password: config.accessCode,
-    rejectUnauthorized: false, // Bambu printers use a self-signed LAN cert
-    reconnectPeriod: 5000,
-    connectTimeout: 10000,
-    clientId: `bambustatuschecker_${crypto.randomBytes(4).toString('hex')}`,
-  });
-  entry.client = client;
-
-  client.on('connect', () => {
-    entry.status.connected = true;
-    entry.status.lastError = null;
-    client.subscribe(`device/${config.serial}/report`, (err) => {
-      if (err) entry.status.lastError = `Subscribe failed: ${err.message}`;
-    });
-    client.publish(
-      `device/${config.serial}/request`,
-      JSON.stringify({ pushing: { sequence_id: '0', command: 'pushall' } })
-    );
-  });
-
-  client.on('message', (_topic, payload) => {
-    try {
-      const msg = JSON.parse(payload.toString());
-      const p = msg.print;
-      if (!p) return;
+  entry.client = deviceType.connect(entry.config, {
+    onConnectionChange(connected, error) {
+      entry.status.connected = connected;
+      entry.status.lastError = error;
+    },
+    onStatus(patch) {
+      Object.assign(entry.status, patch);
       entry.status.lastUpdate = new Date().toISOString();
-      if (p.gcode_state !== undefined) entry.status.gcodeState = p.gcode_state;
-      if (p.mc_percent !== undefined) entry.status.percent = p.mc_percent;
-      if (p.mc_remaining_time !== undefined) entry.status.remainingMinutes = p.mc_remaining_time;
-      if (p.bed_temper !== undefined) entry.status.bedTemp = p.bed_temper;
-      if (p.bed_target_temper !== undefined) entry.status.bedTarget = p.bed_target_temper;
-      if (p.nozzle_temper !== undefined) entry.status.nozzleTemp = p.nozzle_temper;
-      if (p.nozzle_target_temper !== undefined) entry.status.nozzleTarget = p.nozzle_target_temper;
-      if (p.subtask_name !== undefined) entry.status.subtaskName = p.subtask_name;
-      if (p.layer_num !== undefined) entry.status.layerNum = p.layer_num;
-      if (p.total_layer_num !== undefined) entry.status.totalLayerNum = p.total_layer_num;
-    } catch (err) {
-      // Ignore malformed/partial messages
-    }
-  });
-
-  client.on('close', () => {
-    entry.status.connected = false;
-  });
-
-  client.on('error', (err) => {
-    entry.status.connected = false;
-    entry.status.lastError = err.message;
+    },
   });
 }
 
-function toPublicPrinter(entry) {
-  const { id, name, ip, serial } = entry.config;
-  return { id, name, ip, serial, status: entry.status };
+function toPublicDevice(entry) {
+  const { id, name, type } = entry.config;
+  const deviceType = deviceTypes[type];
+  const config = {};
+  if (deviceType) {
+    for (const field of deviceType.fields) {
+      if (!field.secret) config[field.name] = entry.config[field.name];
+    }
+  }
+  return { id, name, type, config, status: entry.status };
 }
 
 // Bootstrap from disk
-for (const config of loadPrinters()) {
+for (const config of loadDevices()) {
+  if (!config.type) config.type = 'bambu'; // back-compat with pre-generic printers.json
   const entry = { config, client: null, status: defaultStatus() };
-  printers.set(config.id, entry);
-  connectPrinter(entry);
+  devices.set(config.id, entry);
+  connectDevice(entry);
 }
 
+app.get('/api/device-types', (_req, res) => {
+  res.json(
+    Object.values(deviceTypes).map((dt) => ({ id: dt.id, label: dt.label, fields: dt.fields }))
+  );
+});
+
 app.get('/api/printers', (_req, res) => {
-  res.json(Array.from(printers.values()).map(toPublicPrinter));
+  res.json(Array.from(devices.values()).map(toPublicDevice));
 });
 
 app.post('/api/printers', (req, res) => {
-  const { name, ip, accessCode, serial } = req.body || {};
-  if (!name || !ip || !accessCode || !serial) {
-    return res.status(400).json({ error: 'name, ip, accessCode, and serial are all required' });
+  const deviceType = deviceTypes[req.body && req.body.type];
+  if (!deviceType) return res.status(400).json({ error: 'A valid device type is required' });
+
+  try {
+    const config = buildConfig(deviceType, req.body);
+    config.id = crypto.randomUUID();
+
+    const entry = { config, client: null, status: defaultStatus() };
+    devices.set(config.id, entry);
+    saveDevices();
+    connectDevice(entry);
+
+    res.status(201).json(toPublicDevice(entry));
+  } catch (err) {
+    if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
+    throw err;
   }
-
-  const config = { id: crypto.randomUUID(), name, ip, accessCode, serial };
-  const entry = { config, client: null, status: defaultStatus() };
-  printers.set(config.id, entry);
-  savePrinters();
-  connectPrinter(entry);
-
-  res.status(201).json(toPublicPrinter(entry));
 });
 
 app.put('/api/printers/:id', (req, res) => {
-  const entry = printers.get(req.params.id);
+  const entry = devices.get(req.params.id);
   if (!entry) return res.status(404).json({ error: 'Printer not found' });
 
-  const { name, ip, serial } = req.body || {};
-  const accessCode = (req.body && req.body.accessCode) || entry.config.accessCode;
-  if (!name || !ip || !accessCode || !serial) {
-    return res.status(400).json({ error: 'name, ip, accessCode, and serial are all required' });
+  const deviceType = deviceTypes[entry.config.type];
+  if (!deviceType) return res.status(400).json({ error: `Unknown device type: ${entry.config.type}` });
+
+  try {
+    const newConfig = buildConfig(deviceType, req.body, entry.config);
+    newConfig.id = entry.config.id;
+
+    const reconnectNeeded = deviceType.fields.some((f) => newConfig[f.name] !== entry.config[f.name]);
+
+    entry.config = newConfig;
+    saveDevices();
+
+    if (reconnectNeeded) {
+      entry.status = defaultStatus();
+      connectDevice(entry);
+    }
+
+    res.json(toPublicDevice(entry));
+  } catch (err) {
+    if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
+    throw err;
   }
-
-  const reconnectNeeded =
-    ip !== entry.config.ip || accessCode !== entry.config.accessCode || serial !== entry.config.serial;
-
-  entry.config = { ...entry.config, name, ip, accessCode, serial };
-  savePrinters();
-
-  if (reconnectNeeded) {
-    entry.status = defaultStatus();
-    connectPrinter(entry);
-  }
-
-  res.json(toPublicPrinter(entry));
 });
 
 app.delete('/api/printers/:id', (req, res) => {
-  const entry = printers.get(req.params.id);
+  const entry = devices.get(req.params.id);
   if (!entry) return res.status(404).json({ error: 'Printer not found' });
 
   if (entry.client) entry.client.end(true);
-  printers.delete(req.params.id);
-  savePrinters();
+  devices.delete(req.params.id);
+  saveDevices();
 
   res.status(204).end();
 });

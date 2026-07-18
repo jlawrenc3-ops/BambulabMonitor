@@ -15,24 +15,22 @@
       <table id="printer-table">
         <thead>
           <tr>
-            <th>Printer</th>
+            <th>Device</th>
             <th>State</th>
-            <th>Job</th>
+            <th>Detail</th>
             <th>Progress</th>
             <th>Remaining</th>
-            <th>Layer</th>
-            <th>Nozzle</th>
-            <th>Bed</th>
+            <th>Metrics</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="printer-tbody"></tbody>
       </table>
-      <p id="empty-state" class="empty-state" hidden>No printers added yet. Add one below.</p>
+      <p id="empty-state" class="empty-state" hidden>No devices added yet. Add one below.</p>
     </section>
 
     <section id="add-printer">
-      <h2 id="form-title">Add Printer</h2>
+      <h2 id="form-title">Add Device</h2>
       <form id="printer-form">
         <input type="hidden" name="id" value="" />
         <label>
@@ -40,19 +38,12 @@
           <input type="text" name="name" placeholder="X1C - Garage" required />
         </label>
         <label>
-          IP Address
-          <input type="text" name="ip" placeholder="192.168.1.50" required />
+          Device Type
+          <select name="type" id="type-select"></select>
         </label>
-        <label>
-          Access Code
-          <input type="text" name="accessCode" placeholder="LAN access code (printer settings)" required />
-        </label>
-        <label>
-          Serial Number
-          <input type="text" name="serial" placeholder="Printer serial number" required />
-        </label>
+        <div id="dynamic-fields"></div>
         <div class="form-actions">
-          <button type="submit" id="submit-btn">Add Printer</button>
+          <button type="submit" id="submit-btn">Add Device</button>
           <button type="button" id="cancel-edit-btn" hidden>Cancel</button>
         </div>
       </form>

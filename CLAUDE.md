@@ -6,3 +6,6 @@ The bambulabstatuschecker is a small webserver that allows subscribing to locall
 
 The bambulabstatuschecker should be managed using GIT, main is located in GITHUB. 
 
+# MQTT
+
+The MQTT server should be generic enough to support future MQTT device monitoring with minor updates to the UI
