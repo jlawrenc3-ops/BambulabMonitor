@@ -106,7 +106,6 @@ module.exports = {
         if (p.layer_num !== undefined) known.layer = p.layer_num;
         if (p.total_layer_num !== undefined) known.totalLayer = p.total_layer_num;
         if (p.ams && Array.isArray(p.ams.ams)) known.amsUnits = p.ams.ams;
-        if (p.vt_tray !== undefined) known.vtTray = p.vt_tray;
 
         const metrics = [];
         if (known.nozzle !== undefined) metrics.push({ column: 'Nozzle', value: formatTemp(known.nozzle, known.nozzleTarget) });
@@ -120,10 +119,6 @@ module.exports = {
               if (m) metrics.push(m);
             });
           });
-        }
-        if (known.vtTray) {
-          const m = traySlotMetric('Spool', null, known.vtTray);
-          if (m) metrics.push(m);
         }
 
         patch.metrics = metrics;
