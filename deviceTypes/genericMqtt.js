@@ -42,9 +42,9 @@ module.exports = {
         patch.metrics = Object.entries(msg)
           .filter(([, v]) => typeof v !== 'object')
           .slice(0, 6)
-          .map(([k, v]) => ({ label: k, value: String(v) }));
+          .map(([k, v]) => ({ column: k, value: String(v) }));
       } catch (err) {
-        patch.metrics = [{ label: 'Payload', value: raw.slice(0, 200) }];
+        patch.metrics = [{ column: 'Payload', value: raw.slice(0, 200) }];
       }
       handlers.onStatus(patch);
     });

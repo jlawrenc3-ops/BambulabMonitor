@@ -1,3 +1,4 @@
+const theadEl = document.getElementById('printer-thead');
 const tbodyEl = document.getElementById('printer-tbody');
 const emptyStateEl = document.getElementById('empty-state');
 const formEl = document.getElementById('printer-form');
@@ -114,18 +115,60 @@ async function loadDeviceTypes() {
 
 typeSelectEl.addEventListener('change', () => renderDynamicFields());
 
+const BASE_COLUMNS = ['Device', 'State', 'Detail', 'Progress', 'Remaining'];
+
+function metricColumns(printers) {
+  const columns = [];
+  const seen = new Set();
+  for (const p of printers) {
+    for (const m of p.status.metrics || []) {
+      if (!seen.has(m.column)) {
+        seen.add(m.column);
+        columns.push(m.column);
+      }
+    }
+  }
+  return columns;
+}
+
+function isValidSwatch(swatch) {
+  return /^#[0-9a-fA-F]{6}$/.test(swatch || '');
+}
+
+function renderMetricCell(metrics) {
+  if (!metrics.length) return '--';
+
+  const slots = metrics.map((m) => {
+    const swatch = isValidSwatch(m.swatch) ? `<span class="metric-swatch" style="background:${m.swatch}"></span>` : '';
+    const title = m.sublabel ? ` title="Slot ${escapeHtml(m.sublabel)}"` : '';
+    return `<span class="metric-slot"${title}>${swatch}${escapeHtml(m.value)}</span>`;
+  }).join('');
+
+  return `<div class="metric-cell-inner">${slots}</div>`;
+}
+
 function renderPrinters(printers) {
   emptyStateEl.hidden = printers.length > 0;
+
+  const dynamicColumns = metricColumns(printers);
+
+  theadEl.innerHTML = `
+    <tr>
+      ${BASE_COLUMNS.map((c) => `<th>${c}</th>`).join('')}
+      ${dynamicColumns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}
+      <th></th>
+    </tr>
+  `;
 
   tbodyEl.innerHTML = printers.map((p) => {
     const s = p.status;
     const percent = s.percent ?? null;
-    const metrics = (s.metrics || []).map((m) => {
-      const swatch = /^#[0-9a-fA-F]{6}$/.test(m.swatch || '')
-        ? `<span class="metric-swatch" style="background:${m.swatch}"></span>`
-        : '';
-      return `<span class="metric-chip">${swatch}${escapeHtml(m.label)}: ${escapeHtml(m.value)}</span>`;
-    }).join('');
+    const metricsByColumn = new Map();
+    for (const m of s.metrics || []) {
+      if (!metricsByColumn.has(m.column)) metricsByColumn.set(m.column, []);
+      metricsByColumn.get(m.column).push(m);
+    }
+
     return `
       <tr data-id="${p.id}">
         <td><span class="status-dot ${s.connected ? 'online' : ''}"></span>${escapeHtml(p.name)}</td>
@@ -135,7 +178,7 @@ function renderPrinters(printers) {
           ${percent === null ? '--' : `<span class="progress-track"><span class="progress-fill" style="width: ${percent}%"></span></span>${percent}%`}
         </td>
         <td>${formatMinutes(s.remainingMinutes)}</td>
-        <td class="metrics-cell">${metrics || '--'}</td>
+        ${dynamicColumns.map((c) => `<td class="metrics-cell">${renderMetricCell(metricsByColumn.get(c) || [])}</td>`).join('')}
         <td>
           <button class="row-btn edit-btn" data-id="${p.id}">Edit</button>
           <button class="row-btn remove-btn" data-id="${p.id}">Remove</button>

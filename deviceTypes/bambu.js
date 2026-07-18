@@ -25,7 +25,7 @@ function hexToCss(trayColor) {
   return /^[0-9a-fA-F]{6}$/.test(rgb) ? `#${rgb}` : null;
 }
 
-function traySlotMetric(label, tray) {
+function traySlotMetric(column, sublabel, tray) {
   if (!tray) return null;
   const type = tray.tray_type || '';
   const remain = Number(tray.remain);
@@ -39,7 +39,8 @@ function traySlotMetric(label, tray) {
     value = type;
   }
 
-  const metric = { label, value };
+  const metric = { column, value };
+  if (sublabel) metric.sublabel = sublabel;
   const swatch = type ? hexToCss(tray.tray_color) : null;
   if (swatch) metric.swatch = swatch;
   return metric;
@@ -108,20 +109,20 @@ module.exports = {
         if (p.vt_tray !== undefined) known.vtTray = p.vt_tray;
 
         const metrics = [];
-        if (known.nozzle !== undefined) metrics.push({ label: 'Nozzle', value: formatTemp(known.nozzle, known.nozzleTarget) });
-        if (known.bed !== undefined) metrics.push({ label: 'Bed', value: formatTemp(known.bed, known.bedTarget) });
-        if (known.layer !== undefined) metrics.push({ label: 'Layer', value: `${known.layer}/${known.totalLayer ?? '?'}` });
+        if (known.nozzle !== undefined) metrics.push({ column: 'Nozzle', value: formatTemp(known.nozzle, known.nozzleTarget) });
+        if (known.bed !== undefined) metrics.push({ column: 'Bed', value: formatTemp(known.bed, known.bedTarget) });
+        if (known.layer !== undefined) metrics.push({ column: 'Layer', value: `${known.layer}/${known.totalLayer ?? '?'}` });
 
         if (known.amsUnits) {
           known.amsUnits.forEach((unit, unitIdx) => {
             (unit.tray || []).forEach((tray, trayIdx) => {
-              const m = traySlotMetric(`AMS${unitIdx + 1}.${trayIdx + 1}`, tray);
+              const m = traySlotMetric(`AMS${unitIdx + 1}`, String(trayIdx + 1), tray);
               if (m) metrics.push(m);
             });
           });
         }
         if (known.vtTray) {
-          const m = traySlotMetric('Spool', known.vtTray);
+          const m = traySlotMetric('Spool', null, known.vtTray);
           if (m) metrics.push(m);
         }
 
