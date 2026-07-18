@@ -19,6 +19,32 @@ function formatTemp(actual, target) {
   return `${a}°C / ${Math.round(target)}°C`;
 }
 
+function hexToCss(trayColor) {
+  if (!trayColor) return null;
+  const rgb = trayColor.slice(0, 6);
+  return /^[0-9a-fA-F]{6}$/.test(rgb) ? `#${rgb}` : null;
+}
+
+function traySlotMetric(label, tray) {
+  if (!tray) return null;
+  const type = tray.tray_type || '';
+  const remain = Number(tray.remain);
+
+  let value;
+  if (!type) {
+    value = 'Empty';
+  } else if (Number.isFinite(remain) && remain >= 0) {
+    value = `${type} ${remain}%`;
+  } else {
+    value = type;
+  }
+
+  const metric = { label, value };
+  const swatch = type ? hexToCss(tray.tray_color) : null;
+  if (swatch) metric.swatch = swatch;
+  return metric;
+}
+
 module.exports = {
   id: 'bambu',
   label: 'Bambu Lab Printer',
@@ -78,11 +104,27 @@ module.exports = {
         if (p.bed_target_temper !== undefined) known.bedTarget = p.bed_target_temper;
         if (p.layer_num !== undefined) known.layer = p.layer_num;
         if (p.total_layer_num !== undefined) known.totalLayer = p.total_layer_num;
+        if (p.ams && Array.isArray(p.ams.ams)) known.amsUnits = p.ams.ams;
+        if (p.vt_tray !== undefined) known.vtTray = p.vt_tray;
 
         const metrics = [];
         if (known.nozzle !== undefined) metrics.push({ label: 'Nozzle', value: formatTemp(known.nozzle, known.nozzleTarget) });
         if (known.bed !== undefined) metrics.push({ label: 'Bed', value: formatTemp(known.bed, known.bedTarget) });
         if (known.layer !== undefined) metrics.push({ label: 'Layer', value: `${known.layer}/${known.totalLayer ?? '?'}` });
+
+        if (known.amsUnits) {
+          known.amsUnits.forEach((unit, unitIdx) => {
+            (unit.tray || []).forEach((tray, trayIdx) => {
+              const m = traySlotMetric(`AMS${unitIdx + 1}.${trayIdx + 1}`, tray);
+              if (m) metrics.push(m);
+            });
+          });
+        }
+        if (known.vtTray) {
+          const m = traySlotMetric('Spool', known.vtTray);
+          if (m) metrics.push(m);
+        }
+
         patch.metrics = metrics;
 
         handlers.onStatus(patch);

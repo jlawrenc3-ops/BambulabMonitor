@@ -72,6 +72,33 @@ h2 { font-size: 1rem; margin: 0 0 0.5rem; }
   white-space: nowrap;
 }
 
+.metrics-cell {
+  white-space: normal;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 180px;
+}
+
+.metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  white-space: nowrap;
+}
+
+.metric-swatch {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+}
+
 #printer-table th {
   color: var(--muted);
   font-weight: 600;

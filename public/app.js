@@ -120,7 +120,12 @@ function renderPrinters(printers) {
   tbodyEl.innerHTML = printers.map((p) => {
     const s = p.status;
     const percent = s.percent ?? null;
-    const metrics = (s.metrics || []).map((m) => `${escapeHtml(m.label)}: ${escapeHtml(m.value)}`).join(', ');
+    const metrics = (s.metrics || []).map((m) => {
+      const swatch = /^#[0-9a-fA-F]{6}$/.test(m.swatch || '')
+        ? `<span class="metric-swatch" style="background:${m.swatch}"></span>`
+        : '';
+      return `<span class="metric-chip">${swatch}${escapeHtml(m.label)}: ${escapeHtml(m.value)}</span>`;
+    }).join('');
     return `
       <tr data-id="${p.id}">
         <td><span class="status-dot ${s.connected ? 'online' : ''}"></span>${escapeHtml(p.name)}</td>
@@ -130,7 +135,7 @@ function renderPrinters(printers) {
           ${percent === null ? '--' : `<span class="progress-track"><span class="progress-fill" style="width: ${percent}%"></span></span>${percent}%`}
         </td>
         <td>${formatMinutes(s.remainingMinutes)}</td>
-        <td>${metrics || '--'}</td>
+        <td class="metrics-cell">${metrics || '--'}</td>
         <td>
           <button class="row-btn edit-btn" data-id="${p.id}">Edit</button>
           <button class="row-btn remove-btn" data-id="${p.id}">Remove</button>
