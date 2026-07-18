@@ -7,6 +7,7 @@ const cancelEditBtnEl = document.getElementById('cancel-edit-btn');
 const formErrorEl = document.getElementById('form-error');
 const typeSelectEl = document.getElementById('type-select');
 const dynamicFieldsEl = document.getElementById('dynamic-fields');
+const notifBtnEl = document.getElementById('enable-notif-btn');
 const idFieldEl = formEl.elements.id;
 
 let lastPrinters = [];
@@ -25,6 +26,48 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
+}
+
+function updateNotifButton() {
+  if (!('Notification' in window)) {
+    notifBtnEl.hidden = true;
+    return;
+  }
+  notifBtnEl.hidden = Notification.permission === 'granted';
+}
+
+notifBtnEl.addEventListener('click', async () => {
+  await Notification.requestPermission();
+  updateNotifButton();
+});
+
+function notify(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    new Notification(title, { body });
+  } catch (err) {
+    // Some contexts (e.g. mobile browsers) require a service worker; ignore.
+  }
+}
+
+function checkForNotifications(printers) {
+  for (const p of printers) {
+    const prev = lastPrinters.find((x) => x.id === p.id);
+    if (!prev) continue; // skip first appearance of a device (no baseline to compare)
+
+    const status = p.status;
+    const prevStatus = prev.status;
+
+    if (status.lastError && !prevStatus.lastError) {
+      notify(`${p.name}: Error`, status.lastError);
+    }
+    if (status.state === 'Finished' && prevStatus.state !== 'Finished') {
+      notify(`${p.name}: Print finished`, status.detail || '');
+    }
+    if (status.state === 'Failed' && prevStatus.state !== 'Failed') {
+      notify(`${p.name}: Print failed`, status.detail || '');
+    }
+  }
 }
 
 function currentDeviceType() {
@@ -101,7 +144,9 @@ function renderPrinters(printers) {
 async function refresh() {
   try {
     const res = await fetch('/api/printers');
-    lastPrinters = await res.json();
+    const printers = await res.json();
+    checkForNotifications(printers);
+    lastPrinters = printers;
     renderPrinters(lastPrinters);
   } catch (err) {
     tbodyEl.innerHTML = '';
@@ -181,6 +226,7 @@ formEl.addEventListener('submit', async (e) => {
 });
 
 (async function init() {
+  updateNotifButton();
   await loadDeviceTypes();
   await refresh();
   setInterval(refresh, 3000);

@@ -1,3 +1,4 @@
 node_modules/
 printers.json
 .env
+server.log

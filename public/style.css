@@ -31,6 +31,20 @@ body {
 
 header {
   padding: 1rem 0 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+#enable-notif-btn {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 0.8rem;
 }
 
 h1 { font-size: 1.25rem; margin: 0; }
