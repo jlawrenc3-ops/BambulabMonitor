@@ -27,7 +27,7 @@ MQTT connection and serves a simple dashboard page over HTTP instead.
    ```
    npm start
    ```
-4. Open http://localhost:3000, pick a device type, and add your
+4. Open http://localhost:4101, pick a device type, and add your
    printer(s) using the form.
 
 Device configuration (including access codes/passwords) is stored

@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const express = require('express');
 const deviceTypes = require('./deviceTypes');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4101;
 const DATA_FILE = path.join(__dirname, 'printers.json');
 
 const app = express();
